@@ -24,16 +24,25 @@ import os
 import sys
 from pathlib import Path
 
+# Dynamically determine the project root relative to this script
+# This ensures it works cross-platform and on HPC/Slurm clusters
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+# Ensure HuggingFace cache directories are contained in the workspace
+os.environ["HF_HOME"] = os.path.join(project_root, ".cache", "huggingface")
+os.environ["HF_DATASETS_CACHE"] = os.path.join(project_root, ".cache", "huggingface", "datasets")
+os.environ["HF_HUB_CACHE"] = os.path.join(project_root, ".cache", "huggingface", "hub")
+
 try:
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download, snapshot_download
 except ImportError:
     print("Please install huggingface_hub: pip install huggingface_hub")
     sys.exit(1)
 
 # Default Directories
-MODELS_DIR = os.getenv("JAX_MODELS", os.path.expanduser("~/.cache/jax-code/models"))
-DATASETS_DIR = os.getenv("JAX_DATASETS", os.path.expanduser("~/.cache/jax-code/datasets"))
-VOCABS_DIR = os.getenv("JAX_VOCABS", os.path.expanduser("~/.cache/jax-code/vocabs"))
+MODELS_DIR = os.getenv("JAX_MODELS", os.path.join(project_root, ".cache", "models"))
+DATASETS_DIR = os.getenv("JAX_DATASETS", os.path.join(project_root, ".cache", "datasets"))
+VOCABS_DIR = os.getenv("JAX_VOCABS", os.path.join(project_root, ".cache", "vocabs"))
 
 
 # HuggingFace repositories
@@ -195,7 +204,7 @@ def download_models(models_dir: str, repo: str = MODELS_REPO):
     return False
 
 
-def download_datasets(datasets_dir: str, repo: str = DATASETS_REPO):
+def download_datasets(datasets_dir: str, repo: str = DATASETS_REPO, allow_patterns=None):
   """Download datasets from HuggingFace."""
   print(f"\nDownloading datasets from {repo}...")
   print(f"Target directory: {datasets_dir}")
@@ -203,12 +212,18 @@ def download_datasets(datasets_dir: str, repo: str = DATASETS_REPO):
   Path(datasets_dir).mkdir(parents=True, exist_ok=True)
 
   try:
-    snapshot_download(
-      repo_id=repo,
-      repo_type="dataset",
-      local_dir=datasets_dir,
-      local_dir_use_symlinks=False,
-    )
+    kwargs = {
+        "repo_id": repo,
+        "repo_type": "dataset",
+        "local_dir": datasets_dir,
+        "local_dir_use_symlinks": False,
+        "resume_download": True,
+        "max_workers": 16,
+    }
+    if allow_patterns:
+        kwargs["allow_patterns"] = allow_patterns
+
+    snapshot_download(**kwargs)
     print(f"[OK] Datasets downloaded successfully to {datasets_dir}")
     return True
   except Exception as e:
@@ -292,7 +307,13 @@ def main():
             print("   Use --force to re-download")
         else:
             if not download_datasets(args.datasets_dir, args.datasets_repo):
-        success = False
+                success = False
+            
+            # Download fineweb 10BT slice
+            fineweb_dir = Path(args.datasets_dir) / "fineweb-edu-10BT"
+            print(f"\nDownloading fineweb-edu 10BT to {fineweb_dir}")
+            if not download_datasets(str(fineweb_dir), "HuggingFaceFW/fineweb-edu", allow_patterns="sample/10BT/*"):
+                success = False
 
     print("\n" + "=" * 70)
     if success:
