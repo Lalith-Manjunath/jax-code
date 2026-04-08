@@ -1,0 +1,5 @@
+{
+    "python.defaultInterpreterPath": "/mnt/d/Code/jax-code/.venv/bin/python",
+    "python.languageServer": "Jedi",
+    "python.useEnvironmentsExtension": false
+}
